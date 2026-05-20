@@ -25,6 +25,7 @@ upstream key 는 proxy 서버에서만 `DATA_GO_KR_API_KEY` 로 관리한다. `K
 
 - `lat`, `lng` (필수) — 위경도
 - `zcode` (필수) — 시도코드 (11 서울, 41 경기, 26 부산, …)
+- `zscode` (선택, 권장) — 시군구코드 5자리 (예: 11680 강남구). 주면 1회 호출로 끝나고 더 가까운 결과
 - `limit` (선택) — 기본 5, 최대 50
 - `chgerType` (선택) — 충전기 타입 코드 01-09
 - `onlyAvailable` (선택) — true 면 충전대기(stat=2) 충전기가 있는 충전소만

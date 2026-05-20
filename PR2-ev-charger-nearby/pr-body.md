@@ -57,11 +57,20 @@ hosted proxy 머지 시 다음이 필요합니다:
 
 ## 검증
 
-- [x] `node --test` — 핸들러 단위 테스트 28개 통과 (normalize·그룹핑·필터·페이지네이션·single-item shape·503/429/resultCode error)
+### 라이브 응답으로 확인한 사실 (실제 키로 getChargerInfo 호출, 2026-05-20)
+
+- `getChargerInfo?dataType=JSON` 의 envelope 은 **flat** 구조다: `resultCode` / `items.item[]` / `totalCount` 가 최상위에 있고, 일부 다른 data.go.kr API 처럼 `response.header` / `response.body` 로 감싸지 **않는다**. 핸들러는 두 형태 모두 방어적으로 파싱한다.
+- `numOfRows=9999` 가 그대로 적용된다 (한 페이지에 최대 9999건 반환 확인).
+- `zscode`(시군구) 필터가 동작한다: `zcode=11&zscode=11680`(강남구) → `totalCount=5920` (서울 전체 74,298건 대비). 따라서 `zscode` 를 주면 1회 호출로 끝난다.
+- 한 충전소가 여러 충전기를 가지며(`statId` 동일, `chgerId` 상이) `statId` 그룹핑이 필요함을 실데이터로 확인.
+
+### 테스트
+
+- [x] `node --test` — 핸들러 테스트 **33개 통과** (단위 30 + 실응답 shape 3: flat envelope 파싱, multi-charger 그룹핑, 충전중/onlyAvailable 필터)
 - [ ] `node --test packages/k-skill-proxy/test/server.test.js` — server 통합 케이스 포함 통과
 - [ ] `./scripts/validate-skills.sh`
 - [ ] `npm run lint`
-- [ ] (리뷰어) `curl "$BASE/v1/ev-charger/nearest?lat=37.4979&lng=127.0276&zcode=11&limit=5&onlyAvailable=true"` — 프록시가 `DATA_GO_KR_API_KEY` 보유하고 dataset 15076352 활용신청 승인된 환경에서 충전소 + 충전기 상태 정상 응답 확인
+- [ ] (리뷰어) `curl "$BASE/v1/ev-charger/nearest?lat=37.4979&lng=127.0276&zcode=11&zscode=11680&limit=5&onlyAvailable=true"` — 프록시가 `DATA_GO_KR_API_KEY` 보유하고 dataset 15076352 활용신청 승인된 환경에서 충전소 + 충전기 상태 정상 응답 확인
 
 ## 기여 가이드 체크
 
