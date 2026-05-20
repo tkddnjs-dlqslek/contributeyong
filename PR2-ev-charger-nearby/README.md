@@ -36,6 +36,13 @@
 - `data.go.kr` 본인 계정에서 dataset **15076352 (한국환경공단_전기자동차 충전소 정보)** 활용신청 클릭 1 회 (자동승인)
 - 환경변수 `DATA_GO_KR_API_KEY` 는 nts/mfds/lh/parking-lot/kstartup 이 이미 사용 중이라 신규 발급 불필요
 
+## ⚠️ PR diff 에 포함하지 말 것 (로컬 테스트용 vendored 파일)
+
+아래 두 파일은 **이미 upstream(`NomaDamas/k-skill`)에 존재**한다. `ev-charger.js` 가 `require("./region-lookup")` 로 재사용하기 때문에 우리 staging 에서 테스트를 돌리려고 복사해둔 것뿐이다. **본인 포크에는 이미 있으므로 PR 에 새로 추가하지 말 것.**
+
+- `packages/k-skill-proxy/src/region-lookup.js`
+- `packages/k-skill-proxy/src/region-codes.json`
+
 ## 검증 상태
 
 - 핸들러 단위 테스트 **28/28 통과** (`_test/ev-charger.test.js`)

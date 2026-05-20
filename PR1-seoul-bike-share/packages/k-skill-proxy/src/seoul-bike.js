@@ -71,6 +71,19 @@ function normalizeSeoulBikeNearestQuery(query = {}) {
   return { lat, lng, limit };
 }
 
+function normalizeSeoulBikeSearchQuery(query = {}) {
+  const q = trimOrNull(query.query ?? query.q);
+  if (q === null) {
+    throw new Error("Provide query (대여소명/지명 키워드).");
+  }
+  if (q.length > 50) {
+    throw new Error("Provide query up to 50 characters.");
+  }
+  const limitRaw = normalizeSeoulBikeInteger(query.limit, "limit", { min: 1, max: SEOUL_BIKE_MAX_NEAREST_LIMIT });
+  const limit = limitRaw === null ? SEOUL_BIKE_DEFAULT_NEAREST_LIMIT : limitRaw;
+  return { query: q, limit };
+}
+
 function haversineDistanceMeters(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const toRad = (deg) => (deg * Math.PI) / 180;
@@ -114,6 +127,72 @@ async function proxySeoulBikeStations({ query, serviceKey, fetchImpl = global.fe
   return fetchSeoulBikePage({ serviceKey, start: query.start, end: query.end, fetchImpl });
 }
 
+async function fetchAllSeoulBikeStations({ serviceKey, fetchImpl = global.fetch }) {
+  const rows = [];
+  for (let start = 1; start <= SEOUL_BIKE_MAX_STATIONS; start += SEOUL_BIKE_MAX_PAGE_SIZE) {
+    const end = Math.min(start + SEOUL_BIKE_MAX_PAGE_SIZE - 1, SEOUL_BIKE_MAX_STATIONS);
+    const upstream = await fetchSeoulBikePage({ serviceKey, start, end, fetchImpl });
+    if (upstream.statusCode < 200 || upstream.statusCode >= 300) {
+      return { error: upstream };
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(upstream.body);
+    } catch {
+      return {
+        error: {
+          statusCode: 502,
+          contentType: "application/json; charset=utf-8",
+          body: JSON.stringify({
+            error: "upstream_invalid_response",
+            message: "Seoul bike upstream returned non-JSON.",
+            upstream_status: upstream.statusCode
+          })
+        }
+      };
+    }
+    const pageRows = parsed?.rentBikeStatus?.row;
+    if (!Array.isArray(pageRows) || pageRows.length === 0) {
+      break;
+    }
+    rows.push(...pageRows);
+    if (pageRows.length < SEOUL_BIKE_MAX_PAGE_SIZE) {
+      break;
+    }
+  }
+  return { rows };
+}
+
+function mapStationRow(row, origin = null) {
+  const lat = Number.parseFloat(row.stationLatitude);
+  const lng = Number.parseFloat(row.stationLongitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+  const rackTotCnt = Number.parseInt(row.rackTotCnt, 10);
+  const parkingBikeTotCnt = Number.parseInt(row.parkingBikeTotCnt, 10);
+  const availableRacks =
+    Number.isFinite(rackTotCnt) && Number.isFinite(parkingBikeTotCnt)
+      ? Math.max(rackTotCnt - parkingBikeTotCnt, 0)
+      : null;
+  const mapped = {
+    stationId: row.stationId ?? null,
+    stationName: row.stationName ?? null,
+    stationLatitude: lat,
+    stationLongitude: lng,
+    parkingBikeTotCnt: Number.isFinite(parkingBikeTotCnt) ? parkingBikeTotCnt : null,
+    rackTotCnt: Number.isFinite(rackTotCnt) ? rackTotCnt : null,
+    availableRacks,
+    shared: row.shared ?? null
+  };
+  if (origin) {
+    mapped.distanceMeters = Math.round(
+      haversineDistanceMeters(origin.lat, origin.lng, lat, lng)
+    );
+  }
+  return mapped;
+}
+
 async function proxySeoulBikeNearest({ query, serviceKey, fetchImpl = global.fetch }) {
   if (!serviceKey) {
     return {
@@ -126,64 +205,14 @@ async function proxySeoulBikeNearest({ query, serviceKey, fetchImpl = global.fet
     };
   }
 
-  const pages = [];
-  for (let start = 1; start <= SEOUL_BIKE_MAX_STATIONS; start += SEOUL_BIKE_MAX_PAGE_SIZE) {
-    const end = Math.min(start + SEOUL_BIKE_MAX_PAGE_SIZE - 1, SEOUL_BIKE_MAX_STATIONS);
-    const upstream = await fetchSeoulBikePage({ serviceKey, start, end, fetchImpl });
-    if (upstream.statusCode < 200 || upstream.statusCode >= 300) {
-      return upstream;
-    }
-    let parsed;
-    try {
-      parsed = JSON.parse(upstream.body);
-    } catch {
-      return {
-        statusCode: 502,
-        contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({
-          error: "upstream_invalid_response",
-          message: "Seoul bike upstream returned non-JSON.",
-          upstream_status: upstream.statusCode
-        })
-      };
-    }
-    const rows = parsed?.rentBikeStatus?.row;
-    if (!Array.isArray(rows) || rows.length === 0) {
-      break;
-    }
-    pages.push(...rows);
-    if (rows.length < SEOUL_BIKE_MAX_PAGE_SIZE) {
-      break;
-    }
+  const result = await fetchAllSeoulBikeStations({ serviceKey, fetchImpl });
+  if (result.error) {
+    return result.error;
   }
+  const pages = result.rows;
 
   const ranked = pages
-    .map((row) => {
-      const lat = Number.parseFloat(row.stationLatitude);
-      const lng = Number.parseFloat(row.stationLongitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        return null;
-      }
-      const rackTotCnt = Number.parseInt(row.rackTotCnt, 10);
-      const parkingBikeTotCnt = Number.parseInt(row.parkingBikeTotCnt, 10);
-      const availableRacks =
-        Number.isFinite(rackTotCnt) && Number.isFinite(parkingBikeTotCnt)
-          ? Math.max(rackTotCnt - parkingBikeTotCnt, 0)
-          : null;
-      return {
-        stationId: row.stationId ?? null,
-        stationName: row.stationName ?? null,
-        stationLatitude: lat,
-        stationLongitude: lng,
-        parkingBikeTotCnt: Number.isFinite(parkingBikeTotCnt) ? parkingBikeTotCnt : null,
-        rackTotCnt: Number.isFinite(rackTotCnt) ? rackTotCnt : null,
-        availableRacks,
-        shared: row.shared ?? null,
-        distanceMeters: Math.round(
-          haversineDistanceMeters(query.lat, query.lng, lat, lng)
-        )
-      };
-    })
+    .map((row) => mapStationRow(row, { lat: query.lat, lng: query.lng }))
     .filter(Boolean)
     .sort((a, b) => a.distanceMeters - b.distanceMeters)
     .slice(0, query.limit);
@@ -196,6 +225,43 @@ async function proxySeoulBikeNearest({ query, serviceKey, fetchImpl = global.fet
         list_total_count: pages.length,
         RESULT: { CODE: "INFO-000", MESSAGE: "Computed by k-skill-proxy nearest helper." },
         row: ranked
+      }
+    })
+  };
+}
+
+async function proxySeoulBikeSearch({ query, serviceKey, fetchImpl = global.fetch }) {
+  if (!serviceKey) {
+    return {
+      statusCode: 503,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: "upstream_not_configured",
+        message: "SEOUL_OPEN_API_KEY is not configured on the proxy server."
+      })
+    };
+  }
+
+  const result = await fetchAllSeoulBikeStations({ serviceKey, fetchImpl });
+  if (result.error) {
+    return result.error;
+  }
+
+  const needle = query.query.toLowerCase();
+  const matched = result.rows
+    .filter((row) => String(row.stationName ?? "").toLowerCase().includes(needle))
+    .map((row) => mapStationRow(row))
+    .filter(Boolean)
+    .slice(0, query.limit);
+
+  return {
+    statusCode: 200,
+    contentType: "application/json; charset=utf-8",
+    body: JSON.stringify({
+      rentBikeStatus: {
+        list_total_count: matched.length,
+        RESULT: { CODE: "INFO-000", MESSAGE: "Filtered by k-skill-proxy search helper." },
+        row: matched
       }
     })
   };
@@ -235,8 +301,10 @@ module.exports = {
   SEOUL_BIKE_MAX_STATIONS,
   normalizeSeoulBikeStationsQuery,
   normalizeSeoulBikeNearestQuery,
+  normalizeSeoulBikeSearchQuery,
   proxySeoulBikeStations,
   proxySeoulBikeNearest,
+  proxySeoulBikeSearch,
   isSeoulBikeErrorBody,
   haversineDistanceMeters
 };

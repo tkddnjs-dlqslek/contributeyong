@@ -58,5 +58,6 @@
 
 ```md
 | `/v1/seoul-bike/nearest` | 사용자 좌표 기준 가까운 따릉이 대여소 top N (haversine 거리) | `SEOUL_OPEN_API_KEY` |
+| `/v1/seoul-bike/search` | 대여소명/지명 키워드로 따릉이 대여소 검색 | `SEOUL_OPEN_API_KEY` |
 | `/v1/seoul-bike/stations` | 따릉이 전체 대여소 페이지 단위 dump (start, end) | `SEOUL_OPEN_API_KEY` |
 ```

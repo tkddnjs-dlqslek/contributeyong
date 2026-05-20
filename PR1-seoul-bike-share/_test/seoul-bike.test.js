@@ -3,8 +3,10 @@ const assert = require("node:assert/strict");
 const {
   normalizeSeoulBikeStationsQuery,
   normalizeSeoulBikeNearestQuery,
+  normalizeSeoulBikeSearchQuery,
   proxySeoulBikeStations,
   proxySeoulBikeNearest,
+  proxySeoulBikeSearch,
   isSeoulBikeErrorBody,
   haversineDistanceMeters,
   SEOUL_BIKE_MAX_PAGE_SIZE
@@ -301,4 +303,73 @@ test("proxySeoulBikeNearest: upstream non-2xx is surfaced", async () => {
     fetchImpl: mockFetch
   });
   assert.equal(out.statusCode, 429);
+});
+
+// ---------- normalize: search ----------
+
+test("normalizeSeoulBikeSearchQuery: accepts query + default limit", () => {
+  assert.deepEqual(normalizeSeoulBikeSearchQuery({ query: "망원역" }), { query: "망원역", limit: 5 });
+});
+
+test("normalizeSeoulBikeSearchQuery: accepts q alias and custom limit", () => {
+  assert.deepEqual(normalizeSeoulBikeSearchQuery({ q: "강남", limit: 10 }), { query: "강남", limit: 10 });
+});
+
+test("normalizeSeoulBikeSearchQuery: missing query rejected", () => {
+  assert.throws(() => normalizeSeoulBikeSearchQuery({}), /Provide query/);
+});
+
+test("normalizeSeoulBikeSearchQuery: overly long query rejected", () => {
+  assert.throws(() => normalizeSeoulBikeSearchQuery({ query: "x".repeat(51) }), /up to 50 characters/);
+});
+
+// ---------- proxySeoulBikeSearch ----------
+
+test("proxySeoulBikeSearch: missing serviceKey -> 503", async () => {
+  const out = await proxySeoulBikeSearch({
+    query: { query: "망원", limit: 5 },
+    serviceKey: null,
+    fetchImpl: () => { throw new Error("must not be called"); }
+  });
+  assert.equal(out.statusCode, 503);
+});
+
+test("proxySeoulBikeSearch: filters by station name substring", async () => {
+  const rows = [
+    makeFakeStation(1, 37.55, 126.91), // Station 1
+    { ...makeFakeStation(2, 37.50, 127.00), stationName: "102. 망원역 1번출구 앞" },
+    { ...makeFakeStation(3, 37.51, 127.01), stationName: "103. 망원역 2번출구 앞" },
+    { ...makeFakeStation(4, 37.49, 127.02), stationName: "207. 여의나루역 1번출구 앞" }
+  ];
+  let calls = 0;
+  const mockFetch = async () => {
+    calls++;
+    const body = calls === 1 ? { rentBikeStatus: { row: rows } } : { rentBikeStatus: { row: [] } };
+    return { status: 200, headers: { get: () => "application/json" }, text: async () => JSON.stringify(body) };
+  };
+  const out = await proxySeoulBikeSearch({
+    query: { query: "망원역", limit: 10 },
+    serviceKey: "SECRET",
+    fetchImpl: mockFetch
+  });
+  assert.equal(out.statusCode, 200);
+  const matched = JSON.parse(out.body).rentBikeStatus.row;
+  assert.equal(matched.length, 2);
+  assert.ok(matched.every((s) => s.stationName.includes("망원역")));
+  // search results have NO distanceMeters (no origin)
+  assert.equal(matched[0].distanceMeters, undefined);
+  // but DO carry availableRacks
+  assert.ok("availableRacks" in matched[0]);
+});
+
+test("proxySeoulBikeSearch: case-insensitive and respects limit", async () => {
+  const rows = [
+    { ...makeFakeStation(1, 37.5, 127.0), stationName: "ABC Station" },
+    { ...makeFakeStation(2, 37.5, 127.0), stationName: "abc Annex" },
+    { ...makeFakeStation(3, 37.5, 127.0), stationName: "ABC Tower" }
+  ];
+  const mockFetch = async () => ({ status: 200, headers: { get: () => "application/json" }, text: async () => JSON.stringify({ rentBikeStatus: { row: rows } }) });
+  const out = await proxySeoulBikeSearch({ query: { query: "abc", limit: 2 }, serviceKey: "K", fetchImpl: mockFetch });
+  const matched = JSON.parse(out.body).rentBikeStatus.row;
+  assert.equal(matched.length, 2);
 });

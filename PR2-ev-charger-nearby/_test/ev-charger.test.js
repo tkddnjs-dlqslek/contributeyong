@@ -14,7 +14,7 @@ const {
 
 test("nearest: valid query", () => {
   const out = normalizeEvChargerNearestQuery({ lat: "37.4979", lng: "127.0276", zcode: "11" });
-  assert.deepEqual(out, { lat: 37.4979, lng: 127.0276, zcode: "11", zscode: null, limit: 5, chgerType: null, onlyAvailable: false });
+  assert.deepEqual(out, { lat: 37.4979, lng: 127.0276, zcode: "11", zscode: null, regionName: null, limit: 5, chgerType: null, speed: null, busiNm: null, onlyAvailable: false });
 });
 
 test("nearest: accepts optional zscode (5 digits)", () => {
@@ -296,4 +296,111 @@ test("proxyEvChargerStatus: passes statId to upstream", async () => {
 test("haversine: 강남역 -> 서울시청 ~ 8km", () => {
   const m = haversineDistanceMeters(37.4979, 127.0276, 37.5663, 126.9779);
   assert.ok(m > 7000 && m < 9500, `got ${m}`);
+});
+
+// ---------- region hint resolution (reuses region-lookup) ----------
+
+const { normalizeEvChargerSpeed, resolveEvChargerRegion } = require("../packages/k-skill-proxy/src/ev-charger");
+
+test("regionHint: '서울 강남구' resolves to zcode 11, zscode 11680", () => {
+  const out = normalizeEvChargerNearestQuery({ lat: 37.5, lng: 127.0, regionHint: "서울 강남구" });
+  assert.equal(out.zcode, "11");
+  assert.equal(out.zscode, "11680");
+  assert.equal(out.regionName, "서울특별시 강남구");
+});
+
+test("regionHint: ambiguous hint throws with candidates", () => {
+  // '구' alone matches many 구 → ambiguous
+  assert.throws(() => normalizeEvChargerNearestQuery({ lat: 37.5, lng: 127.0, regionHint: "서울특별시" }),
+    /ambiguous|No region/);
+});
+
+test("regionHint: unknown hint throws", () => {
+  assert.throws(() => normalizeEvChargerNearestQuery({ lat: 37.5, lng: 127.0, regionHint: "존재하지않는동네zzz" }),
+    /No region matched/);
+});
+
+test("regionHint: absent -> falls back to explicit zcode", () => {
+  const out = normalizeEvChargerNearestQuery({ lat: 37.5, lng: 127.0, zcode: "11" });
+  assert.equal(out.zcode, "11");
+  assert.equal(out.zscode, null);
+  assert.equal(out.regionName, null);
+});
+
+test("resolveEvChargerRegion: returns null when no hint", () => {
+  assert.equal(resolveEvChargerRegion({}), null);
+});
+
+// ---------- speed normalize ----------
+
+test("speed: fast/급속/dc -> fast", () => {
+  assert.equal(normalizeEvChargerSpeed("fast"), "fast");
+  assert.equal(normalizeEvChargerSpeed("급속"), "fast");
+  assert.equal(normalizeEvChargerSpeed("DC"), "fast");
+});
+
+test("speed: slow/완속/ac -> slow", () => {
+  assert.equal(normalizeEvChargerSpeed("slow"), "slow");
+  assert.equal(normalizeEvChargerSpeed("완속"), "slow");
+  assert.equal(normalizeEvChargerSpeed("ac"), "slow");
+});
+
+test("speed: null when absent", () => {
+  assert.equal(normalizeEvChargerSpeed(undefined), null);
+});
+
+test("speed: invalid throws", () => {
+  assert.throws(() => normalizeEvChargerSpeed("초고속"), /fast\(급속\) or slow\(완속\)/);
+});
+
+// ---------- speed + busiNm filters in grouping ----------
+
+function rowWithOutput(statId, lat, lng, output, busiNm, stat = 2) {
+  return {
+    statId, statNm: statId, addr: "서울", lat: String(lat), lng: String(lng),
+    busiNm, useTime: "24시간", parkingFree: "Y",
+    chgerId: "01", chgerType: "04", stat: String(stat), statUpdDt: "20260520", output: String(output)
+  };
+}
+
+test("filter: speed=fast keeps >=50kW only", () => {
+  const items = [
+    rowWithOutput("FAST", 37.5, 127.0, 100, "환경부"),
+    rowWithOutput("SLOW", 37.5, 127.0, 7, "환경부")
+  ];
+  const out = groupChargersByStation(items, { lat: 37.5, lng: 127.0, limit: 10, speed: "fast" });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].statId, "FAST");
+});
+
+test("filter: speed=slow keeps <50kW only", () => {
+  const items = [
+    rowWithOutput("FAST", 37.5, 127.0, 100, "환경부"),
+    rowWithOutput("SLOW", 37.5, 127.0, 7, "환경부")
+  ];
+  const out = groupChargersByStation(items, { lat: 37.5, lng: 127.0, limit: 10, speed: "slow" });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].statId, "SLOW");
+});
+
+test("filter: busiNm substring (case-insensitive)", () => {
+  const items = [
+    rowWithOutput("A", 37.5, 127.0, 100, "환경부"),
+    rowWithOutput("B", 37.5, 127.0, 100, "한국전력공사"),
+    rowWithOutput("C", 37.5, 127.0, 100, "GS칼텍스")
+  ];
+  const out = groupChargersByStation(items, { lat: 37.5, lng: 127.0, limit: 10, busiNm: "한국전력" });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].statId, "B");
+});
+
+test("filter: speed + busiNm combined", () => {
+  const items = [
+    rowWithOutput("A", 37.5, 127.0, 100, "환경부"),
+    rowWithOutput("B", 37.5, 127.0, 7, "환경부"),
+    rowWithOutput("C", 37.5, 127.0, 100, "한전")
+  ];
+  const out = groupChargersByStation(items, { lat: 37.5, lng: 127.0, limit: 10, speed: "fast", busiNm: "환경부" });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].statId, "A");
 });

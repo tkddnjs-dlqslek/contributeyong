@@ -52,7 +52,8 @@ metadata:
 ## Inputs
 
 - `lat`, `lng` (필수, nearest 라우트) — 위경도 (소수점)
-- `limit` (선택, nearest 라우트) — 가져올 대여소 개수, 기본 5, 최대 50
+- `limit` (선택, nearest/search 라우트) — 가져올 대여소 개수, 기본 5, 최대 50
+- `query` (필수, search 라우트) — 대여소명/지명 키워드 (예: `망원역`, `강남`)
 - `start`, `end` (선택, stations 라우트) — 페이지 범위, 최대 1000개 / 요청
 
 ## Workflow
@@ -64,7 +65,19 @@ metadata:
 ### 2. Choose the route
 
 - **위치 기반 가까운 대여소 (90% 케이스)**: `/v1/seoul-bike/nearest`
+- **대여소명/지명으로 찾을 때** (좌표 없이 "망원역 따릉이"): `/v1/seoul-bike/search`
 - **전체 페이지 dump 가 필요할 때만**: `/v1/seoul-bike/stations`
+
+대여소명 검색 예시:
+
+```bash
+BASE="${KSKILL_PROXY_BASE_URL:-https://k-skill-proxy.nomadamas.org}"
+curl -fsS --get "${BASE}/v1/seoul-bike/search" \
+  --data-urlencode 'query=망원역' \
+  --data-urlencode 'limit=5'
+```
+
+search 결과에는 `distanceMeters` 가 없고(좌표 기준점 없음), 대신 잔여 자전거·빈 거치대는 동일하게 포함된다.
 
 ### 3. Query the nearest endpoint
 

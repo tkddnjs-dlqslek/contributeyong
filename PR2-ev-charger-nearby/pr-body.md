@@ -4,7 +4,7 @@
 
 - 환경부(한국환경공단) ChargEV dataset `15076352` (전기자동차 충전소 정보, `B552584/EvCharger/getChargerInfo`) 를 `k-skill-proxy` 경유로 조회하는 스킬 `ev-charger-nearby` 추가
 - `k-skill-proxy` 에 라우트 2 개 신규
-  - `GET /v1/ev-charger/nearest` → 시도코드(zcode) 범위로 충전기를 모아 `statId` 단위로 묶고, 사용자 좌표 기준 haversine 거리 정렬해 상위 N 개 충전소 반환. `chgerType` / `onlyAvailable` 필터 지원
+  - `GET /v1/ev-charger/nearest` → 지역(zcode/zscode, 또는 자연어 `regionHint` 자동해석) 범위로 충전기를 모아 `statId` 단위로 묶고, 사용자 좌표 기준 haversine 거리 정렬해 상위 N 개 충전소 반환. `chgerType` / `speed`(급속·완속) / `busiNm`(운영기관) / `onlyAvailable` 필터 지원
   - `GET /v1/ev-charger/status` → 특정 충전소(`statId`) 충전기 상태 pass-through
 - `cheap-gas-nearby`(주유소) 와 동일한 위치 기반 패턴 — `DATA_GO_KR_API_KEY` 는 서버 측에서만 주입, 사용자는 hosted proxy 단일 모드로 키 없이 호출
 - `getChargerInfo` 는 `dataType=JSON` 을 지원하므로 proxy 에 XML 파서 의존성을 추가하지 않음 (기존 deps 그대로 fastify 단일)
@@ -36,11 +36,15 @@ hosted proxy 머지 시 다음이 필요합니다:
 
 ## 설계 선택
 
-- **zcode 필수**: 전국 충전기는 30 만 건 규모라 일괄 조회가 비현실적. 시도코드(zcode) 단위로 fetch 를 한정하고, 스킬이 사용자 시·도를 zcode 로 매핑하도록 SKILL.md 에 코드표 포함.
+- **regionHint 자동 해석**: 사용자가 "강남에서…" 처럼 지역을 말하면 `regionHint=서울 강남구` 로 보낼 수 있다. proxy 가 **기존 `region-lookup` 모듈을 재사용**해 LAWD_CD(법정동 5자리)로 변환하고, 그 값이 EV API 의 `zscode`(앞 2자리는 `zcode`)와 동일 체계임을 이용해 자동으로 채운다. 코드표 암기 불필요. (region-lookup / region-codes.json 은 이미 repo 에 있으므로 신규 추가 없음)
+- **zcode/zscode**: regionHint 없이 직접 줄 수도 있다. 전국 30 만 건 일괄 조회는 비현실적이라 시·도(zcode) 또는 시·군·구(zscode) 로 범위를 한정한다. zscode 를 주면 1 회 호출로 끝난다(실측: 강남구 5,920건 < 9,999 페이지 한도).
 - **statId 그룹핑**: `getChargerInfo` 는 충전기 단위 행을 반환하므로 proxy 가 충전소 단위로 묶고 `availableCount`(충전대기 충전기 수) 를 계산.
+- **speed 필터**: `output >= 50kW` 를 급속(fast), 미만을 완속(slow) 으로 분류.
+- **busiNm 필터**: 운영기관명 부분일치(대소문자 무시).
 - **JSON 강제**: `dataType=JSON` 고정 → XML 파서 무의존. data.go.kr 단일 아이템(비배열) 응답도 정규화.
 - **좌표 검증**: lat ∈ [33, 39], lng ∈ [124, 132]. `limit` 최대 50.
 - **onlyAvailable**: 충전대기(stat=2) 충전기가 1개 이상인 충전소만 필터.
+- **totalCount 기반 페이지네이션**: 응답 페이지가 요청 numOfRows 보다 작아도 `totalCount` 도달까지 순회(최대 12 페이지). 초과 시 `truncated: true`.
 
 ## 변경 파일
 
@@ -66,7 +70,7 @@ hosted proxy 머지 시 다음이 필요합니다:
 
 ### 테스트
 
-- [x] `node --test` — 핸들러 테스트 **33개 통과** (단위 30 + 실응답 shape 3: flat envelope 파싱, multi-charger 그룹핑, 충전중/onlyAvailable 필터)
+- [x] `node --test` — 핸들러 테스트 **46개 통과** (단위 43 + 실응답 shape 3: flat envelope 파싱, multi-charger 그룹핑, 충전중/onlyAvailable 필터)
 - [ ] `node --test packages/k-skill-proxy/test/server.test.js` — server 통합 케이스 포함 통과
 - [ ] `./scripts/validate-skills.sh`
 - [ ] `npm run lint`

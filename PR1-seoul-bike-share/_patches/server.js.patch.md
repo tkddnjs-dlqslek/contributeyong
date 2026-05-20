@@ -17,8 +17,10 @@ const {
   isSeoulBikeErrorBody,
   normalizeSeoulBikeStationsQuery,
   normalizeSeoulBikeNearestQuery,
+  normalizeSeoulBikeSearchQuery,
   proxySeoulBikeStations,
-  proxySeoulBikeNearest
+  proxySeoulBikeNearest,
+  proxySeoulBikeSearch
 } = require("./seoul-bike");
 ```
 
@@ -155,6 +157,15 @@ seoulOpenApiConfigured: Boolean(config.seoulOpenApiKey),
     fetcher: proxySeoulBikeStations,
     errorChecker: isSeoulBikeErrorBody
   }));
+
+  app.get("/v1/seoul-bike/search", async (request, reply) => handleSeoulBikeRoute({
+    route: "seoul-bike-search",
+    request,
+    reply,
+    normalizer: normalizeSeoulBikeSearchQuery,
+    fetcher: proxySeoulBikeSearch,
+    errorChecker: isSeoulBikeErrorBody
+  }));
 ```
 
 ---
@@ -167,6 +178,7 @@ module.exports = {
   proxyKstartupRequest,
   proxySeoulBikeNearest,        // ← 추가
   proxySeoulBikeStations,       // ← 추가
+  proxySeoulBikeSearch,         // ← 추가
   proxySeoulCityDataRequest,
   proxySeoulSubwayRequest,
   // ... 나머지

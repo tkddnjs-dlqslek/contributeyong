@@ -24,10 +24,13 @@ upstream key 는 proxy 서버에서만 `DATA_GO_KR_API_KEY` 로 관리한다. `K
 ### `/v1/ev-charger/nearest`
 
 - `lat`, `lng` (필수) — 위경도
-- `zcode` (필수) — 시도코드 (11 서울, 41 경기, 26 부산, …)
+- `regionHint` (권장) — 자연어 지역명 (예: `서울 강남구`). proxy 가 region-lookup 으로 zcode/zscode 자동 해석
+- `zcode` (regionHint 없을 때 필수) — 시도코드 (11 서울, 41 경기, 26 부산, …)
 - `zscode` (선택, 권장) — 시군구코드 5자리 (예: 11680 강남구). 주면 1회 호출로 끝나고 더 가까운 결과
 - `limit` (선택) — 기본 5, 최대 50
 - `chgerType` (선택) — 충전기 타입 코드 01-09
+- `speed` (선택) — fast(급속, 50kW+) / slow(완속)
+- `busiNm` (선택) — 운영기관명 부분일치 필터
 - `onlyAvailable` (선택) — true 면 충전대기(stat=2) 충전기가 있는 충전소만
 
 ### `/v1/ev-charger/status`

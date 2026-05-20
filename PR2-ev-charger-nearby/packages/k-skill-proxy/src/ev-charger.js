@@ -1,8 +1,12 @@
+const { searchRegionCode } = require("./region-lookup");
+
 const EV_CHARGER_UPSTREAM_BASE_URL = "https://apis.data.go.kr/B552584/EvCharger";
 const EV_CHARGER_PAGE_SIZE = 9999;
 const EV_CHARGER_MAX_PAGES = 12;
 const EV_CHARGER_DEFAULT_NEAREST_LIMIT = 5;
 const EV_CHARGER_MAX_NEAREST_LIMIT = 50;
+// "급속" 으로 간주하는 최소 충전용량(kW). 50kW 이상이면 급속으로 본다.
+const EV_CHARGER_FAST_MIN_OUTPUT_KW = 50;
 
 // 환경부 표준 충전기 타입 코드
 const EV_CHARGER_TYPE_NAMES = new Map([
@@ -118,16 +122,67 @@ function normalizeEvChargerZscode(value) {
   return raw;
 }
 
+function normalizeEvChargerSpeed(value) {
+  const raw = trimOrNull(value);
+  if (raw === null) {
+    return null;
+  }
+  const lower = raw.toLowerCase();
+  if (["fast", "급속", "rapid", "dc"].includes(lower)) {
+    return "fast";
+  }
+  if (["slow", "완속", "ac"].includes(lower)) {
+    return "slow";
+  }
+  throw new Error(`Provide speed as fast(급속) or slow(완속). Got "${raw}".`);
+}
+
+// regionHint(자연어 지역명) → { zcode, zscode } 를 기존 region-lookup 으로 해석한다.
+// LAWD_CD(법정동 5자리) 가 EV API 의 zscode 와 동일 체계이고, 앞 2자리가 zcode 다.
+function resolveEvChargerRegion(query) {
+  const regionHint = trimOrNull(query.regionHint ?? query.region_hint);
+  if (regionHint === null) {
+    return null;
+  }
+  const matches = searchRegionCode(regionHint);
+  if (matches.length === 0) {
+    throw new Error(`No region matched "${regionHint}". Provide zcode/zscode directly.`);
+  }
+  if (matches.length > 1) {
+    const names = matches.slice(0, 5).map((m) => m.name).join(", ");
+    throw new Error(`Region "${regionHint}" is ambiguous (${names}). Narrow it or provide zscode directly.`);
+  }
+  const lawd = matches[0].lawd_cd;
+  return { zcode: lawd.slice(0, 2), zscode: lawd, regionName: matches[0].name };
+}
+
 function normalizeEvChargerNearestQuery(query = {}) {
   const lat = normalizeEvChargerCoordinate(query.lat, "lat", { min: 33, max: 39 });
   const lng = normalizeEvChargerCoordinate(query.lng, "lng", { min: 124, max: 132 });
-  const zcode = normalizeEvChargerZcode(query.zcode);
-  const zscode = normalizeEvChargerZscode(query.zscode);
+
+  const resolved = resolveEvChargerRegion(query);
+  let zcode;
+  let zscode;
+  let regionName = null;
+  if (resolved) {
+    if (!EV_CHARGER_ZCODES.has(resolved.zcode)) {
+      throw new Error(`Resolved zcode "${resolved.zcode}" is not a valid 시도코드.`);
+    }
+    zcode = resolved.zcode;
+    zscode = resolved.zscode;
+    regionName = resolved.regionName;
+  } else {
+    zcode = normalizeEvChargerZcode(query.zcode);
+    zscode = normalizeEvChargerZscode(query.zscode);
+  }
+
   const limitRaw = normalizeEvChargerInteger(query.limit, "limit", { min: 1, max: EV_CHARGER_MAX_NEAREST_LIMIT });
   const limit = limitRaw === null ? EV_CHARGER_DEFAULT_NEAREST_LIMIT : limitRaw;
   const chgerType = normalizeEvChargerType(query.chgerType ?? query.charger_type);
+  const speed = normalizeEvChargerSpeed(query.speed);
+  const busiNm = trimOrNull(query.busiNm ?? query.busi_nm);
   const onlyAvailable = normalizeEvChargerBoolean(query.onlyAvailable ?? query.only_available);
-  return { lat, lng, zcode, zscode, limit, chgerType, onlyAvailable };
+  return { lat, lng, zcode, zscode, regionName, limit, chgerType, speed, busiNm, onlyAvailable };
 }
 
 function normalizeEvChargerStatusQuery(query = {}) {
@@ -217,10 +272,31 @@ function notConfigured() {
   };
 }
 
+function chargerOutputKw(row) {
+  const kw = Number.parseFloat(row.output);
+  return Number.isFinite(kw) ? kw : null;
+}
+
 function groupChargersByStation(items, query) {
   const stations = new Map();
+  const busiNeedle = query.busiNm ? query.busiNm.toLowerCase() : null;
   for (const row of items) {
     if (query.chgerType && row.chgerType !== query.chgerType) {
+      continue;
+    }
+    if (query.speed) {
+      const kw = chargerOutputKw(row);
+      if (kw === null) {
+        continue;
+      }
+      if (query.speed === "fast" && kw < EV_CHARGER_FAST_MIN_OUTPUT_KW) {
+        continue;
+      }
+      if (query.speed === "slow" && kw >= EV_CHARGER_FAST_MIN_OUTPUT_KW) {
+        continue;
+      }
+    }
+    if (busiNeedle && !String(row.busiNm ?? "").toLowerCase().includes(busiNeedle)) {
       continue;
     }
     const lat = Number.parseFloat(row.lat);
@@ -338,6 +414,7 @@ async function proxyEvChargerNearest({ query, serviceKey, fetchImpl = global.fet
     body: JSON.stringify({
       zcode: query.zcode,
       zscode: query.zscode ?? null,
+      regionName: query.regionName ?? null,
       total_chargers_scanned: items.length,
       truncated,
       stations
@@ -389,6 +466,8 @@ module.exports = {
   EV_CHARGER_ZCODES,
   normalizeEvChargerNearestQuery,
   normalizeEvChargerStatusQuery,
+  normalizeEvChargerSpeed,
+  resolveEvChargerRegion,
   proxyEvChargerNearest,
   proxyEvChargerStatus,
   isEvChargerErrorBody,
