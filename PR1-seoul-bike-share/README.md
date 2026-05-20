@@ -21,7 +21,7 @@
 3. **파일 복사**: 이 폴더의 신규 파일 4 개를 같은 경로로 복사.
 4. **server.js 수정**: `_patches/server.js.patch.md` 의 4 군데를 실제 `packages/k-skill-proxy/src/server.js` 에 반영.
 5. **docs/readme 수정**: `_patches/docs-and-readme.patch.md` 의 5 군데 반영.
-6. **테스트 추가**: `packages/k-skill-proxy/test/server.test.js` 에 seoul-bike 라우트 케이스 5 개 (기존 kstartup/seoul-density 테스트 패턴 모방). PR1 에서는 별도 파일로 분리하지 않았음 — 작업 시점에 reference 파일을 직접 보고 짝맞춰 작성.
+6. **테스트 추가**: `_patches/server.test.js.append.md` 의 통합 테스트 6종을 `packages/k-skill-proxy/test/server.test.js` 끝에 붙여넣는다 (기존 kstartup/seoul-density 패턴과 동일). 핸들러 단위 테스트(`_test/`)도 원하면 함께 포함.
 7. **로컬 검증**:
    ```bash
    npm install

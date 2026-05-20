@@ -21,7 +21,7 @@
 3. **파일 복사**: 신규 4 개.
 4. **server.js 수정**: `_patches/server.js.patch.md` 4 군데.
 5. **docs/readme 수정**: `_patches/docs-and-readme.patch.md` 5 군데.
-6. **테스트 추가**: `packages/k-skill-proxy/test/server.test.js` 에 ev-charger 라우트 케이스 (기존 패턴 모방).
+6. **테스트 추가**: `_patches/server.test.js.append.md` 의 통합 테스트 6종을 `packages/k-skill-proxy/test/server.test.js` 끝에 붙여넣는다 (기존 kstartup 패턴과 동일). 핸들러 단위 테스트(`_test/`)도 원하면 함께 포함.
 7. **로컬 검증**:
    ```bash
    npm install

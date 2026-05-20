@@ -49,7 +49,7 @@ hosted proxy 머지 시 다음이 필요합니다:
 | `seoul-bike-share/SKILL.md` | 신규 — 스킬 정의 (9 개 표준 섹션 + Mandatory first question) |
 | `packages/k-skill-proxy/src/seoul-bike.js` | 신규 — normalize·proxy fetch·haversine·error detection |
 | `packages/k-skill-proxy/src/server.js` | 수정 — import 블록, `handleSeoulBikeRoute`, 라우트 3 개 등록, exports 추가 |
-| `packages/k-skill-proxy/test/server.test.js` | 수정 — seoul-bike 라우트 5 개 신규 테스트 케이스 (캐시/공개 호출/503/400/요청 인코딩) |
+| `packages/k-skill-proxy/test/server.test.js` | 수정 — seoul-bike 통합 테스트 6종 추가 (`_patches/server.test.js.append.md` 참고: 캐시/공개 호출/503/400/search) |
 | `docs/features/seoul-bike-share.md` | 신규 — 기능 가이드 |
 | `docs/sources.md` | 수정 — OA-13252 출처 등록 |
 | `docs/install.md` | 수정 — 설치 목록 추가 |
@@ -68,7 +68,7 @@ hosted proxy 머지 시 다음이 필요합니다:
 ### 테스트
 
 - [x] `node --test` — 핸들러 테스트 **38개 통과** (단위 + 실응답 shape + search 필터)
-- [ ] `node --test packages/k-skill-proxy/test/server.test.js` — server 통합 케이스 포함 통과
+- [x] server 통합 테스트 6종 작성 완료 (`_patches/server.test.js.append.md`) — `buildServer`+`app.inject` 패턴, 전체 repo 에서 `node --test packages/k-skill-proxy/test/server.test.js` 로 실행
 - [ ] `./scripts/validate-skills.sh`
 - [ ] `npm run lint`
 - [ ] (리뷰어) `curl "$BASE/v1/seoul-bike/nearest?lat=37.4979&lng=127.0276&limit=5"` 및 `curl "$BASE/v1/seoul-bike/search?query=망원역"` — 프록시가 `SEOUL_OPEN_API_KEY` 보유하고 `OA-13252` 활용신청 승인된 환경에서 정상 응답 확인

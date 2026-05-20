@@ -53,7 +53,7 @@ hosted proxy 머지 시 다음이 필요합니다:
 | `ev-charger-nearby/SKILL.md` | 신규 — 스킬 정의 + 코드 레퍼런스 표 |
 | `packages/k-skill-proxy/src/ev-charger.js` | 신규 — normalize·페이지네이션·statId 그룹핑·haversine·error detection |
 | `packages/k-skill-proxy/src/server.js` | 수정 — import, `handleEvChargerRoute`, 라우트 2개, exports |
-| `packages/k-skill-proxy/test/server.test.js` | 수정 — ev-charger 라우트 통합 테스트 케이스 추가 |
+| `packages/k-skill-proxy/test/server.test.js` | 수정 — ev-charger 통합 테스트 6종 추가 (`_patches/server.test.js.append.md` 참고: 캐시/503/400/regionHint/502/status) |
 | `docs/features/ev-charger-nearby.md` | 신규 |
 | `docs/sources.md` / `docs/install.md` / `docs/roadmap.md` | 수정 |
 | `README.md` / `packages/k-skill-proxy/README.md` | 수정 |
@@ -71,7 +71,7 @@ hosted proxy 머지 시 다음이 필요합니다:
 ### 테스트
 
 - [x] `node --test` — 핸들러 테스트 **46개 통과** (단위 43 + 실응답 shape 3: flat envelope 파싱, multi-charger 그룹핑, 충전중/onlyAvailable 필터)
-- [ ] `node --test packages/k-skill-proxy/test/server.test.js` — server 통합 케이스 포함 통과
+- [x] server 통합 테스트 6종 작성 완료 (`_patches/server.test.js.append.md`) — `buildServer`+`app.inject` 패턴, 전체 repo 에서 `node --test packages/k-skill-proxy/test/server.test.js` 로 실행
 - [ ] `./scripts/validate-skills.sh`
 - [ ] `npm run lint`
 - [ ] (리뷰어) `curl "$BASE/v1/ev-charger/nearest?lat=37.4979&lng=127.0276&zcode=11&zscode=11680&limit=5&onlyAvailable=true"` — 프록시가 `DATA_GO_KR_API_KEY` 보유하고 dataset 15076352 활용신청 승인된 환경에서 충전소 + 충전기 상태 정상 응답 확인
