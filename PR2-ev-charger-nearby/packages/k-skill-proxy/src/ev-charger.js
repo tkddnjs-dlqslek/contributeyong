@@ -1,6 +1,6 @@
 const EV_CHARGER_UPSTREAM_BASE_URL = "https://apis.data.go.kr/B552584/EvCharger";
 const EV_CHARGER_PAGE_SIZE = 9999;
-const EV_CHARGER_MAX_PAGES = 6;
+const EV_CHARGER_MAX_PAGES = 12;
 const EV_CHARGER_DEFAULT_NEAREST_LIMIT = 5;
 const EV_CHARGER_MAX_NEAREST_LIMIT = 50;
 
@@ -107,15 +107,27 @@ function normalizeEvChargerBoolean(value) {
   return lower === "true" || lower === "1" || lower === "y" || lower === "yes";
 }
 
+function normalizeEvChargerZscode(value) {
+  const raw = trimOrNull(value);
+  if (raw === null) {
+    return null;
+  }
+  if (!/^\d{5}$/.test(raw)) {
+    throw new Error(`Provide zscode (시군구코드) as 5 digits. Got "${raw}".`);
+  }
+  return raw;
+}
+
 function normalizeEvChargerNearestQuery(query = {}) {
   const lat = normalizeEvChargerCoordinate(query.lat, "lat", { min: 33, max: 39 });
   const lng = normalizeEvChargerCoordinate(query.lng, "lng", { min: 124, max: 132 });
   const zcode = normalizeEvChargerZcode(query.zcode);
+  const zscode = normalizeEvChargerZscode(query.zscode);
   const limitRaw = normalizeEvChargerInteger(query.limit, "limit", { min: 1, max: EV_CHARGER_MAX_NEAREST_LIMIT });
   const limit = limitRaw === null ? EV_CHARGER_DEFAULT_NEAREST_LIMIT : limitRaw;
   const chgerType = normalizeEvChargerType(query.chgerType ?? query.charger_type);
   const onlyAvailable = normalizeEvChargerBoolean(query.onlyAvailable ?? query.only_available);
-  return { lat, lng, zcode, limit, chgerType, onlyAvailable };
+  return { lat, lng, zcode, zscode, limit, chgerType, onlyAvailable };
 }
 
 function normalizeEvChargerStatusQuery(query = {}) {
@@ -141,8 +153,12 @@ function haversineDistanceMeters(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
+// ChargEV returns a flat top-level envelope ({ resultCode, items: { item }, totalCount }),
+// not the nested response.header/response.body shape used by some other data.go.kr APIs.
+// Support both shapes defensively.
 function extractItems(parsed) {
-  const item = parsed?.response?.body?.items?.item;
+  const body = parsed?.response?.body ?? parsed;
+  const item = body?.items?.item;
   if (Array.isArray(item)) {
     return item;
   }
@@ -153,7 +169,16 @@ function extractItems(parsed) {
 }
 
 function getResultCode(parsed) {
-  return String(parsed?.response?.header?.resultCode ?? "").trim();
+  const code = parsed?.response?.header?.resultCode ?? parsed?.resultCode;
+  return String(code ?? "").trim();
+}
+
+function getResultMsg(parsed) {
+  return parsed?.response?.header?.resultMsg ?? parsed?.resultMsg ?? null;
+}
+
+function getTotalCount(parsed) {
+  return Number.parseInt(parsed?.response?.body?.totalCount ?? parsed?.totalCount, 10);
 }
 
 async function fetchEvChargerPage({ serviceKey, params, fetchImpl = global.fetch }) {
@@ -251,10 +276,11 @@ async function proxyEvChargerNearest({ query, serviceKey, fetchImpl = global.fet
   }
 
   const items = [];
+  let truncated = false;
   for (let pageNo = 1; pageNo <= EV_CHARGER_MAX_PAGES; pageNo += 1) {
     const upstream = await fetchEvChargerPage({
       serviceKey,
-      params: { pageNo, numOfRows: EV_CHARGER_PAGE_SIZE, zcode: query.zcode },
+      params: { pageNo, numOfRows: EV_CHARGER_PAGE_SIZE, zcode: query.zcode, zscode: query.zscode },
       fetchImpl
     });
     if (upstream.statusCode < 200 || upstream.statusCode >= 300) {
@@ -283,18 +309,24 @@ async function proxyEvChargerNearest({ query, serviceKey, fetchImpl = global.fet
         body: JSON.stringify({
           error: "upstream_error",
           resultCode,
-          resultMsg: parsed?.response?.header?.resultMsg ?? null
+          resultMsg: getResultMsg(parsed)
         })
       };
     }
     const pageItems = extractItems(parsed);
     items.push(...pageItems);
-    const totalCount = Number.parseInt(parsed?.response?.body?.totalCount, 10);
-    if (pageItems.length < EV_CHARGER_PAGE_SIZE) {
+    const totalCount = getTotalCount(parsed);
+
+    // Stop conditions (do NOT rely on pageItems.length < requested numOfRows;
+    // ChargEV may cap the page size below the requested value).
+    if (pageItems.length === 0) {
       break;
     }
     if (Number.isFinite(totalCount) && items.length >= totalCount) {
       break;
+    }
+    if (pageNo === EV_CHARGER_MAX_PAGES && Number.isFinite(totalCount) && items.length < totalCount) {
+      truncated = true;
     }
   }
 
@@ -305,7 +337,9 @@ async function proxyEvChargerNearest({ query, serviceKey, fetchImpl = global.fet
     contentType: "application/json; charset=utf-8",
     body: JSON.stringify({
       zcode: query.zcode,
+      zscode: query.zscode ?? null,
       total_chargers_scanned: items.length,
+      truncated,
       stations
     })
   };

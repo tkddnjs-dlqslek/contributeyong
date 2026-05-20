@@ -14,7 +14,17 @@ const {
 
 test("nearest: valid query", () => {
   const out = normalizeEvChargerNearestQuery({ lat: "37.4979", lng: "127.0276", zcode: "11" });
-  assert.deepEqual(out, { lat: 37.4979, lng: 127.0276, zcode: "11", limit: 5, chgerType: null, onlyAvailable: false });
+  assert.deepEqual(out, { lat: 37.4979, lng: 127.0276, zcode: "11", zscode: null, limit: 5, chgerType: null, onlyAvailable: false });
+});
+
+test("nearest: accepts optional zscode (5 digits)", () => {
+  const out = normalizeEvChargerNearestQuery({ lat: "37.4979", lng: "127.0276", zcode: "11", zscode: "11680" });
+  assert.equal(out.zscode, "11680");
+});
+
+test("nearest: rejects malformed zscode", () => {
+  assert.throws(() => normalizeEvChargerNearestQuery({ lat: 37.5, lng: 127, zcode: "11", zscode: "abc" }),
+    /zscode .* 5 digits/);
 });
 
 test("nearest: zcode required", () => {
