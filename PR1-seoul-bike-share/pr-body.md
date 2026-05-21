@@ -7,6 +7,8 @@
   - `GET /v1/seoul-bike/nearest` → proxy 가 전체 페이지를 합쳐 사용자 좌표 기준 haversine 거리로 정렬해 상위 N 개만 반환 (90% 사용 케이스)
   - `GET /v1/seoul-bike/search` → 대여소명/지명 키워드로 검색 (좌표 없이 "망원역 따릉이")
   - `GET /v1/seoul-bike/stations` → `bikeList/{start}/{end}/` pass-through (전체 dump 가 필요할 때만)
+- **빌리기/반납 양방향 필터**: `available`/`minBikes`(자전거 있는 곳) ↔ `returnable`/`minRacks`(빈 거치대 있는 곳). 응답에 `availableRacks`(빈 거치대 = rackTotCnt − parkingBikeTotCnt) 를 계산해 포함.
+- **좌표 없이 지명으로 동작**: 좌표 대신 지명("합정역")이 오면 기존 공용 `/v1/kakao-local/geocode` 라우트로 먼저 좌표를 구한 뒤 nearest 를 호출하도록 SKILL.md 에 명시 (`korean-transit-route` 와 동일한 오케스트레이션, proxy 신규 코드 없음).
 - `seoul-subway-arrival` / `seoul-density` 와 동일한 패턴 — `SEOUL_OPEN_API_KEY` 는 서버 측에서만 주입, 사용자는 hosted proxy (`k-skill-proxy.nomadamas.org`) 단일 모드로 호출하면 키 없이 동작
 - 정상 JSON 응답만 캐시, 서울 API 오류 envelope (`RESULT.CODE != "INFO-000"`) 은 캐시 우회해 인증·한도 오류가 자가 회복되도록 함
 - CONTRIBUTING 가이드대로 `docs/features/seoul-bike-share.md`, `README.md` 표/리스트, `docs/sources.md`, `docs/install.md`, `docs/roadmap.md`, `packages/k-skill-proxy/README.md`, `.changeset/seoul-bike-share.md` (`k-skill-proxy` minor) 동시 갱신

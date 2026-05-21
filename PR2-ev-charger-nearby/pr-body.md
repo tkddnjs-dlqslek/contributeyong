@@ -6,6 +6,9 @@
 - `k-skill-proxy` 에 라우트 2 개 신규
   - `GET /v1/ev-charger/nearest` → 지역(zcode/zscode, 또는 자연어 `regionHint` 자동해석) 범위로 충전기를 모아 `statId` 단위로 묶고, 사용자 좌표 기준 haversine 거리 정렬해 상위 N 개 충전소 반환. `chgerType` / `speed`(급속·완속) / `busiNm`(운영기관) / `onlyAvailable` 필터 지원
   - `GET /v1/ev-charger/status` → 특정 충전소(`statId`) 충전기 상태 pass-through
+- **좌표 없이 지명으로 동작**: 지명("성수동")이 오면 공용 `/v1/kakao-local/geocode` 로 좌표 + 주소를 구하고, 주소에서 시·구를 뽑아 `regionHint` 로 넘기면 zcode/zscode 자동 변환 (기존 `region-lookup` 재사용, 신규 매핑 테이블 없음).
+- **경계 보정**: `zscode` 는 콤마로 인접 시·군·구를 함께 받을 수 있어(최대 5개) 시·도/시·군·구 경계 너머 충전소 누락을 방지.
+- **truncated 안내**: 시·도 전체가 너무 커서 일부만 스캔되면 응답에 사람이 읽을 `notice` 메시지를 포함해 에이전트가 사용자에게 범위 좁히기를 안내.
 - `cheap-gas-nearby`(주유소) 와 동일한 위치 기반 패턴 — `DATA_GO_KR_API_KEY` 는 서버 측에서만 주입, 사용자는 hosted proxy 단일 모드로 키 없이 호출
 - `getChargerInfo` 는 `dataType=JSON` 을 지원하므로 proxy 에 XML 파서 의존성을 추가하지 않음 (기존 deps 그대로 fastify 단일)
 - `resultCode != "00"` envelope 은 캐시 우회해 인증·한도 오류가 자가 회복되도록 함
