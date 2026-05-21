@@ -28,7 +28,7 @@ metadata:
 - 권장 질문: `현재 위치를 알려주세요. 위도·경도, 동네, 역명, 랜드마크 중 편한 형식으로 보내주시면 가까운 따릉이 대여소를 찾아볼게요.`
 - 의도가 애매하면: `자전거를 빌리려는 거예요, 반납하려는 거예요? 답변에 따라 잔여 자전거 또는 빈 거치대를 우선 보여드릴게요.`
 
-좌표가 아닌 동·역명·랜드마크가 들어오면 좌표로 먼저 환산한다 (Kakao Map anchor 검색이나 일반 지오코딩). 환산이 안 되면 사용자에게 위경도를 다시 묻는다.
+좌표가 아닌 동·역명·랜드마크가 들어오면 **먼저 지오코딩**으로 좌표를 구한다 (아래 Workflow 의 "Geocode place names" 단계). 지오코딩이 실패하면 사용자에게 위경도를 다시 묻거나, `search` 라우트로 대여소명 검색을 시도한다.
 
 ## Prerequisites
 
@@ -61,6 +61,23 @@ metadata:
 ### 1. Resolve the proxy base URL
 
 `KSKILL_PROXY_BASE_URL` 이 있으면 그 값을 사용하고, 없거나 비어 있으면 기본 hosted proxy `https://k-skill-proxy.nomadamas.org` 를 사용한다.
+
+### 1.5. Geocode place names (좌표가 없을 때)
+
+사용자가 좌표 대신 동·역명·랜드마크("성수동 카페거리", "합정역", "여의도한강공원")를 줬다면, 기존 `k-skill-proxy` 의 Kakao Local geocode 라우트로 먼저 좌표를 구한다. (이 라우트는 `korean-transit-route` 등이 쓰는 공용 라우트이며, Kakao 키는 서버에만 있다.)
+
+```bash
+BASE="${KSKILL_PROXY_BASE_URL:-https://k-skill-proxy.nomadamas.org}"
+curl -fsS --get "${BASE}/v1/kakao-local/geocode" --data-urlencode 'q=합정역'
+```
+
+응답은 Kakao 형식이다. 첫 결과의 `documents[0].y`(위도) → `lat`, `documents[0].x`(경도) → `lng` 로 쓴다.
+
+```jsonc
+{ "documents": [ { "x": "126.9135", "y": "37.5495", "address_name": "서울 마포구 ..." } ] }
+```
+
+지오코딩 결과가 없으면 사용자에게 더 구체적인 지명/좌표를 묻거나, 역명·대여소명이면 2단계의 `search` 라우트를 쓴다.
 
 ### 2. Choose the route
 

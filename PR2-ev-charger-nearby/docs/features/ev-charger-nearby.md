@@ -13,6 +13,8 @@
 - [공통 설정 가이드](../setup.md) 확인
 - 사용자 현재 위치(위경도) 와 시·도
 
+> 좌표가 없고 지명만 있으면, 스킬이 먼저 공용 `/v1/kakao-local/geocode?q=<지명>` 라우트로 좌표 + 주소를 구한 뒤, 주소에서 시·구를 뽑아 `regionHint` 로 넘긴다. 즉 "성수동 근처 충전소"처럼 좌표·코드 없이도 동작한다 (Kakao 키는 서버에만 있어 사용자 키 불필요).
+
 ## 기본 경로
 
 기본적으로 `https://k-skill-proxy.nomadamas.org/v1/ev-charger/nearest` 로 요청한다.

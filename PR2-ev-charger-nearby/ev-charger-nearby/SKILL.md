@@ -97,9 +97,25 @@ metadata:
 
 `KSKILL_PROXY_BASE_URL` 이 있으면 그 값을, 없으면 기본 hosted proxy `https://k-skill-proxy.nomadamas.org` 를 사용한다.
 
-### 2. Ask location + resolve zcode
+### 1.5. Geocode place names (좌표가 없을 때)
 
-사용자 위경도와 시·도를 확보하고 시·도를 `zcode` 로 매핑한다.
+사용자가 좌표 대신 지명("성수동 카페거리", "판교역", "강남")을 줬다면, 기존 `k-skill-proxy` 의 Kakao Local geocode 라우트로 먼저 좌표 + 주소를 구한다. (Kakao 키는 서버에만 있다.)
+
+```bash
+BASE="${KSKILL_PROXY_BASE_URL:-https://k-skill-proxy.nomadamas.org}"
+curl -fsS --get "${BASE}/v1/kakao-local/geocode" --data-urlencode 'q=성수동 카페거리'
+```
+
+응답에서:
+- `documents[0].y` → `lat`, `documents[0].x` → `lng`
+- `documents[0].address_name` (예: `"서울 성동구 성수동..."`) 에서 **시·구를 뽑아 `regionHint`** 로 넘긴다. 그러면 nearest 가 알아서 zcode/zscode 로 변환한다.
+
+즉 지명 한 번만 지오코딩하면 `lat`/`lng` 와 `regionHint` 를 동시에 채울 수 있어 사용자가 좌표·코드를 몰라도 된다.
+
+### 2. Resolve region (zcode/zscode 또는 regionHint)
+
+- 지오코딩으로 `address_name` 을 얻었으면 `regionHint=<시 구>` 로 넘기는 게 가장 간단하다.
+- 사용자가 직접 시·도/시·군·구를 말하면 `zcode`(시도) 또는 `zscode`(시군구) 로 넘긴다.
 
 ### 3. Query the nearest endpoint
 
