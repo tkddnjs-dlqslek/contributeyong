@@ -65,7 +65,8 @@ curl -fsS --get "${BASE}/v1/ev-charger/nearest" \
 
 ## 주의할 점
 
-- ChargEV API 는 전국 일괄 조회가 불가능하고 시도코드(zcode) 단위로 조회한다. 시·도 경계 근처는 인접 zcode 로 한 번 더 조회한다.
+- ChargEV API 는 전국 일괄 조회가 불가능하고 시·도(zcode)/시·군·구(zscode) 단위로 조회한다. 경계 근처는 `zscode` 에 인접 구를 콤마로 함께 넣어 보정한다 (예: `11680,11650`).
+- 시·도(zcode)만으로 조회 시 충전기가 너무 많으면 일부만 스캔되며, 이때 응답에 `truncated: true` 와 사람이 읽을 `notice` 메시지가 포함된다. 그 `notice` 를 사용자에게 전하고 `zscode`/`regionHint` 로 범위를 좁혀 다시 조회한다.
 - 상태(`stat`)는 실시간이나 갱신 주기가 충전소마다 달라 `statUpdDt` 를 함께 본다.
 - 일일 호출 한도 초과 또는 dataset 활용신청 미승인 시 `resultCode != "00"` 가 반환된다.
 
