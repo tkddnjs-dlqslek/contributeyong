@@ -29,6 +29,8 @@
 - `lat` — 위도 (33 ~ 39 사이)
 - `lng` — 경도 (124 ~ 132 사이)
 - `limit` (선택) — 가져올 대여소 개수, 기본 5, 최대 50
+- `available`/`minBikes` (선택) — 빌리기: 자전거가 있는(또는 N대 이상) 대여소만
+- `returnable`/`minRacks` (선택) — 반납: 빈 거치대가 있는(또는 N개 이상) 대여소만
 
 ### `/v1/seoul-bike/stations` (페이지 dump, 부가 라우트)
 

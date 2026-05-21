@@ -63,17 +63,31 @@ function normalizeSeoulBikeStationsQuery(query = {}) {
   return { start: normalizedStart, end: normalizedEnd };
 }
 
+function isTruthyFlag(value) {
+  const raw = trimOrNull(value);
+  if (raw === null) {
+    return false;
+  }
+  const lower = raw.toLowerCase();
+  return lower === "true" || lower === "1" || lower === "y" || lower === "yes";
+}
+
 function normalizeSeoulBikeMinBikes(query) {
   const minRaw = normalizeSeoulBikeInteger(query.minBikes ?? query.min_bikes, "minBikes", { min: 0 });
   let minBikes = minRaw === null ? 0 : minRaw;
-  const available = trimOrNull(query.available);
-  if (available !== null) {
-    const lower = available.toLowerCase();
-    if (lower === "true" || lower === "1" || lower === "y" || lower === "yes") {
-      minBikes = Math.max(minBikes, 1);
-    }
+  if (isTruthyFlag(query.available)) {
+    minBikes = Math.max(minBikes, 1);
   }
   return minBikes;
+}
+
+function normalizeSeoulBikeMinRacks(query) {
+  const minRaw = normalizeSeoulBikeInteger(query.minRacks ?? query.min_racks, "minRacks", { min: 0 });
+  let minRacks = minRaw === null ? 0 : minRaw;
+  if (isTruthyFlag(query.returnable)) {
+    minRacks = Math.max(minRacks, 1);
+  }
+  return minRacks;
 }
 
 function normalizeSeoulBikeNearestQuery(query = {}) {
@@ -82,7 +96,8 @@ function normalizeSeoulBikeNearestQuery(query = {}) {
   const limitRaw = normalizeSeoulBikeInteger(query.limit, "limit", { min: 1, max: SEOUL_BIKE_MAX_NEAREST_LIMIT });
   const limit = limitRaw === null ? SEOUL_BIKE_DEFAULT_NEAREST_LIMIT : limitRaw;
   const minBikes = normalizeSeoulBikeMinBikes(query);
-  return { lat, lng, limit, minBikes };
+  const minRacks = normalizeSeoulBikeMinRacks(query);
+  return { lat, lng, limit, minBikes, minRacks };
 }
 
 function normalizeSeoulBikeSearchQuery(query = {}) {
@@ -96,7 +111,8 @@ function normalizeSeoulBikeSearchQuery(query = {}) {
   const limitRaw = normalizeSeoulBikeInteger(query.limit, "limit", { min: 1, max: SEOUL_BIKE_MAX_NEAREST_LIMIT });
   const limit = limitRaw === null ? SEOUL_BIKE_DEFAULT_NEAREST_LIMIT : limitRaw;
   const minBikes = normalizeSeoulBikeMinBikes(query);
-  return { query: q, limit, minBikes };
+  const minRacks = normalizeSeoulBikeMinRacks(query);
+  return { query: q, limit, minBikes, minRacks };
 }
 
 function haversineDistanceMeters(lat1, lng1, lat2, lng2) {
@@ -227,10 +243,12 @@ async function proxySeoulBikeNearest({ query, serviceKey, fetchImpl = global.fet
   const pages = result.rows;
 
   const minBikes = query.minBikes ?? 0;
+  const minRacks = query.minRacks ?? 0;
   const ranked = pages
     .map((row) => mapStationRow(row, { lat: query.lat, lng: query.lng }))
     .filter(Boolean)
     .filter((s) => (s.parkingBikeTotCnt ?? 0) >= minBikes)
+    .filter((s) => (s.availableRacks ?? 0) >= minRacks)
     .sort((a, b) => a.distanceMeters - b.distanceMeters)
     .slice(0, query.limit);
 
@@ -266,11 +284,13 @@ async function proxySeoulBikeSearch({ query, serviceKey, fetchImpl = global.fetc
 
   const needle = query.query.toLowerCase();
   const minBikes = query.minBikes ?? 0;
+  const minRacks = query.minRacks ?? 0;
   const matched = result.rows
     .filter((row) => String(row.stationName ?? "").toLowerCase().includes(needle))
     .map((row) => mapStationRow(row))
     .filter(Boolean)
     .filter((s) => (s.parkingBikeTotCnt ?? 0) >= minBikes)
+    .filter((s) => (s.availableRacks ?? 0) >= minRacks)
     .slice(0, query.limit);
 
   return {

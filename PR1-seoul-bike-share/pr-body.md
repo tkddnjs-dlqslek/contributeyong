@@ -67,7 +67,7 @@ hosted proxy 머지 시 다음이 필요합니다:
 
 ### 테스트
 
-- [x] `node --test` — 핸들러 테스트 **38개 통과** (단위 + 실응답 shape + search 필터)
+- [x] `node --test` — 핸들러 테스트 **45개 통과** (단위 + 실응답 shape + search + available/minBikes + returnable/minRacks 필터)
 - [x] server 통합 테스트 6종 작성 완료 (`_patches/server.test.js.append.md`) — `buildServer`+`app.inject` 패턴, 전체 repo 에서 `node --test packages/k-skill-proxy/test/server.test.js` 로 실행
 - [ ] `./scripts/validate-skills.sh`
 - [ ] `npm run lint`
