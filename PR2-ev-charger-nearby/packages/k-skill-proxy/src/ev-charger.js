@@ -111,15 +111,24 @@ function normalizeEvChargerBoolean(value) {
   return lower === "true" || lower === "1" || lower === "y" || lower === "yes";
 }
 
-function normalizeEvChargerZscode(value) {
+// zscode 는 콤마로 여러 시·군·구를 받을 수 있다 (시·도/시·군·구 경계 보정용).
+// 예: "11680,11650" → 강남구 + 서초구. 최대 5개.
+const EV_CHARGER_MAX_ZSCODES = 5;
+function normalizeEvChargerZscodeList(value) {
   const raw = trimOrNull(value);
   if (raw === null) {
     return null;
   }
-  if (!/^\d{5}$/.test(raw)) {
-    throw new Error(`Provide zscode (시군구코드) as 5 digits. Got "${raw}".`);
+  const codes = raw.split(",").map((c) => c.trim()).filter(Boolean);
+  if (codes.length > EV_CHARGER_MAX_ZSCODES) {
+    throw new Error(`Provide at most ${EV_CHARGER_MAX_ZSCODES} zscode values.`);
   }
-  return raw;
+  for (const c of codes) {
+    if (!/^\d{5}$/.test(c)) {
+      throw new Error(`Provide each zscode as 5 digits. Got "${c}".`);
+    }
+  }
+  return codes.length > 0 ? Array.from(new Set(codes)) : null;
 }
 
 function normalizeEvChargerSpeed(value) {
@@ -162,18 +171,30 @@ function normalizeEvChargerNearestQuery(query = {}) {
 
   const resolved = resolveEvChargerRegion(query);
   let zcode;
-  let zscode;
+  let zscodes = null;
   let regionName = null;
   if (resolved) {
     if (!EV_CHARGER_ZCODES.has(resolved.zcode)) {
       throw new Error(`Resolved zcode "${resolved.zcode}" is not a valid 시도코드.`);
     }
     zcode = resolved.zcode;
-    zscode = resolved.zscode;
+    zscodes = [resolved.zscode];
     regionName = resolved.regionName;
   } else {
-    zcode = normalizeEvChargerZcode(query.zcode);
-    zscode = normalizeEvChargerZscode(query.zscode);
+    zscodes = normalizeEvChargerZscodeList(query.zscode);
+    // zcode 가 직접 주어지면 검증, 없으면 zscodes 의 앞 2자리에서 유도
+    const zcodeRaw = trimOrNull(query.zcode);
+    if (zcodeRaw !== null) {
+      zcode = normalizeEvChargerZcode(zcodeRaw);
+    } else if (zscodes) {
+      zcode = zscodes[0].slice(0, 2);
+      if (!EV_CHARGER_ZCODES.has(zcode)) {
+        throw new Error(`Derived zcode "${zcode}" from zscode is not a valid 시도코드.`);
+      }
+    } else {
+      // 둘 다 없으면 기존 에러 메시지 유지
+      zcode = normalizeEvChargerZcode(query.zcode);
+    }
   }
 
   const limitRaw = normalizeEvChargerInteger(query.limit, "limit", { min: 1, max: EV_CHARGER_MAX_NEAREST_LIMIT });
@@ -182,7 +203,7 @@ function normalizeEvChargerNearestQuery(query = {}) {
   const speed = normalizeEvChargerSpeed(query.speed);
   const busiNm = trimOrNull(query.busiNm ?? query.busi_nm);
   const onlyAvailable = normalizeEvChargerBoolean(query.onlyAvailable ?? query.only_available);
-  return { lat, lng, zcode, zscode, regionName, limit, chgerType, speed, busiNm, onlyAvailable };
+  return { lat, lng, zcode, zscodes, regionName, limit, chgerType, speed, busiNm, onlyAvailable };
 }
 
 function normalizeEvChargerStatusQuery(query = {}) {
@@ -346,55 +367,54 @@ function groupChargersByStation(items, query) {
     .slice(0, query.limit);
 }
 
-async function proxyEvChargerNearest({ query, serviceKey, fetchImpl = global.fetch }) {
-  if (!serviceKey) {
-    return notConfigured();
-  }
-
+// 한 scope(특정 zscode 또는 zcode 전체)를 페이지 단위로 수집한다.
+// 반환: { error } 또는 { items, truncated }
+async function fetchEvChargerScope({ serviceKey, zcode, zscode, fetchImpl }) {
   const items = [];
   let truncated = false;
   for (let pageNo = 1; pageNo <= EV_CHARGER_MAX_PAGES; pageNo += 1) {
     const upstream = await fetchEvChargerPage({
       serviceKey,
-      params: { pageNo, numOfRows: EV_CHARGER_PAGE_SIZE, zcode: query.zcode, zscode: query.zscode },
+      params: { pageNo, numOfRows: EV_CHARGER_PAGE_SIZE, zcode, zscode },
       fetchImpl
     });
     if (upstream.statusCode < 200 || upstream.statusCode >= 300) {
-      return upstream;
+      return { error: upstream };
     }
     let parsed;
     try {
       parsed = JSON.parse(upstream.body);
     } catch {
       return {
-        statusCode: 502,
-        contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({
-          error: "upstream_invalid_response",
-          message: "EV charger upstream returned non-JSON.",
-          upstream_status: upstream.statusCode,
-          upstream_body: upstream.body.slice(0, 500)
-        })
+        error: {
+          statusCode: 502,
+          contentType: "application/json; charset=utf-8",
+          body: JSON.stringify({
+            error: "upstream_invalid_response",
+            message: "EV charger upstream returned non-JSON.",
+            upstream_status: upstream.statusCode,
+            upstream_body: upstream.body.slice(0, 500)
+          })
+        }
       };
     }
     const resultCode = getResultCode(parsed);
     if (resultCode && resultCode !== "00") {
       return {
-        statusCode: 502,
-        contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({
-          error: "upstream_error",
-          resultCode,
-          resultMsg: getResultMsg(parsed)
-        })
+        error: {
+          statusCode: 502,
+          contentType: "application/json; charset=utf-8",
+          body: JSON.stringify({
+            error: "upstream_error",
+            resultCode,
+            resultMsg: getResultMsg(parsed)
+          })
+        }
       };
     }
     const pageItems = extractItems(parsed);
     items.push(...pageItems);
     const totalCount = getTotalCount(parsed);
-
-    // Stop conditions (do NOT rely on pageItems.length < requested numOfRows;
-    // ChargEV may cap the page size below the requested value).
     if (pageItems.length === 0) {
       break;
     }
@@ -405,20 +425,48 @@ async function proxyEvChargerNearest({ query, serviceKey, fetchImpl = global.fet
       truncated = true;
     }
   }
+  return { items, truncated };
+}
+
+async function proxyEvChargerNearest({ query, serviceKey, fetchImpl = global.fetch }) {
+  if (!serviceKey) {
+    return notConfigured();
+  }
+
+  // 조회 scope 결정: zscodes 가 있으면 각 시·군·구를, 없으면 zcode(시·도) 전체를 본다.
+  const scopes = query.zscodes && query.zscodes.length > 0
+    ? query.zscodes.map((zscode) => ({ zcode: query.zcode, zscode }))
+    : [{ zcode: query.zcode, zscode: undefined }];
+
+  const items = [];
+  let truncated = false;
+  for (const scope of scopes) {
+    const result = await fetchEvChargerScope({ serviceKey, zcode: scope.zcode, zscode: scope.zscode, fetchImpl });
+    if (result.error) {
+      return result.error;
+    }
+    items.push(...result.items);
+    truncated = truncated || result.truncated;
+  }
 
   const stations = groupChargersByStation(items, query);
+
+  const payload = {
+    zcode: query.zcode,
+    zscode: query.zscodes ? query.zscodes.join(",") : null,
+    regionName: query.regionName ?? null,
+    total_chargers_scanned: items.length,
+    truncated,
+    stations
+  };
+  if (truncated) {
+    payload.notice = "시·도(zcode) 전체를 다 조회하지 못해 일부만 스캔했습니다. 더 정확한 결과를 원하면 zscode(시·군·구) 또는 regionHint로 범위를 좁혀 다시 조회하세요.";
+  }
 
   return {
     statusCode: 200,
     contentType: "application/json; charset=utf-8",
-    body: JSON.stringify({
-      zcode: query.zcode,
-      zscode: query.zscode ?? null,
-      regionName: query.regionName ?? null,
-      total_chargers_scanned: items.length,
-      truncated,
-      stations
-    })
+    body: JSON.stringify(payload)
   };
 }
 

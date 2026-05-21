@@ -14,12 +14,23 @@ const {
 
 test("nearest: valid query", () => {
   const out = normalizeEvChargerNearestQuery({ lat: "37.4979", lng: "127.0276", zcode: "11" });
-  assert.deepEqual(out, { lat: 37.4979, lng: 127.0276, zcode: "11", zscode: null, regionName: null, limit: 5, chgerType: null, speed: null, busiNm: null, onlyAvailable: false });
+  assert.deepEqual(out, { lat: 37.4979, lng: 127.0276, zcode: "11", zscodes: null, regionName: null, limit: 5, chgerType: null, speed: null, busiNm: null, onlyAvailable: false });
 });
 
 test("nearest: accepts optional zscode (5 digits)", () => {
   const out = normalizeEvChargerNearestQuery({ lat: "37.4979", lng: "127.0276", zcode: "11", zscode: "11680" });
-  assert.equal(out.zscode, "11680");
+  assert.deepEqual(out.zscodes, ["11680"]);
+});
+
+test("nearest: accepts comma-separated zscode list (boundary coverage)", () => {
+  const out = normalizeEvChargerNearestQuery({ lat: "37.4979", lng: "127.0276", zscode: "11680,11650" });
+  assert.deepEqual(out.zscodes, ["11680", "11650"]);
+  assert.equal(out.zcode, "11"); // derived from first zscode
+});
+
+test("nearest: rejects too many zscodes", () => {
+  assert.throws(() => normalizeEvChargerNearestQuery({ lat: 37.5, lng: 127, zscode: "11680,11650,11620,11110,11140,11170" }),
+    /at most 5 zscode/);
 });
 
 test("nearest: rejects malformed zscode", () => {
@@ -305,7 +316,7 @@ const { normalizeEvChargerSpeed, resolveEvChargerRegion } = require("../packages
 test("regionHint: '서울 강남구' resolves to zcode 11, zscode 11680", () => {
   const out = normalizeEvChargerNearestQuery({ lat: 37.5, lng: 127.0, regionHint: "서울 강남구" });
   assert.equal(out.zcode, "11");
-  assert.equal(out.zscode, "11680");
+  assert.deepEqual(out.zscodes, ["11680"]);
   assert.equal(out.regionName, "서울특별시 강남구");
 });
 
@@ -323,7 +334,7 @@ test("regionHint: unknown hint throws", () => {
 test("regionHint: absent -> falls back to explicit zcode", () => {
   const out = normalizeEvChargerNearestQuery({ lat: 37.5, lng: 127.0, zcode: "11" });
   assert.equal(out.zcode, "11");
-  assert.equal(out.zscode, null);
+  assert.equal(out.zscodes, null);
   assert.equal(out.regionName, null);
 });
 
@@ -403,4 +414,63 @@ test("filter: speed + busiNm combined", () => {
   const out = groupChargersByStation(items, { lat: 37.5, lng: 127.0, limit: 10, speed: "fast", busiNm: "환경부" });
   assert.equal(out.length, 1);
   assert.equal(out[0].statId, "A");
+});
+
+// ---------- #3 multi-zscode boundary coverage ----------
+
+test("proxyEvChargerNearest: fetches multiple zscodes and merges", async (t) => {
+  const callZscodes = [];
+  const mockFetch = async (url) => {
+    const u = String(url);
+    const m = u.match(/zscode=(\d{5})/);
+    callZscodes.push(m ? m[1] : null);
+    const statId = m && m[1] === "11680" ? "GANGNAM" : "SEOCHO";
+    const lat = m && m[1] === "11680" ? "37.5172" : "37.4837";
+    return {
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify(envelope([
+        { statId, statNm: statId, addr: "서울", lat, lng: "127.03", busiNm: "환경부", chgerId: "01", chgerType: "04", stat: "2", output: "100", statUpdDt: "20260520" }
+      ], 1))
+    };
+  };
+  const q = normalizeEvChargerNearestQuery({ lat: "37.50", lng: "127.03", zscode: "11680,11650", limit: 5 });
+  const out = await proxyEvChargerNearest({ query: q, serviceKey: "K", fetchImpl: mockFetch });
+  const j = JSON.parse(out.body);
+  assert.deepEqual(callZscodes.sort(), ["11650", "11680"]);
+  assert.equal(j.stations.length, 2);
+  assert.equal(j.zscode, "11680,11650");
+});
+
+// ---------- #2 truncated notice ----------
+
+test("proxyEvChargerNearest: truncated adds human-readable notice", async () => {
+  // Always return a full page with totalCount far above what MAX_PAGES can fetch
+  const bigItem = (i) => ({ statId: `S${i}`, statNm: `S${i}`, addr: "x", lat: "37.5", lng: "127.0", busiNm: "환경부", chgerId: "01", chgerType: "04", stat: "2", output: "100", statUpdDt: "x" });
+  const page = Array.from({ length: 9999 }, (_, i) => bigItem(i));
+  const mockFetch = async () => ({
+    status: 200,
+    headers: { get: () => "application/json" },
+    text: async () => JSON.stringify(envelope(page, 999999)) // totalCount never reached
+  });
+  const q = normalizeEvChargerNearestQuery({ lat: "37.5", lng: "127.0", zcode: "11", limit: 2 });
+  const out = await proxyEvChargerNearest({ query: q, serviceKey: "K", fetchImpl: mockFetch });
+  const j = JSON.parse(out.body);
+  assert.equal(j.truncated, true);
+  assert.match(j.notice, /좁혀|zscode|regionHint/);
+});
+
+test("proxyEvChargerNearest: not truncated -> no notice", async () => {
+  const mockFetch = async () => ({
+    status: 200,
+    headers: { get: () => "application/json" },
+    text: async () => JSON.stringify(envelope([
+      { statId: "S1", statNm: "S1", addr: "x", lat: "37.5", lng: "127.0", busiNm: "환경부", chgerId: "01", chgerType: "04", stat: "2", output: "100", statUpdDt: "x" }
+    ], 1))
+  });
+  const q = normalizeEvChargerNearestQuery({ lat: "37.5", lng: "127.0", zcode: "11", limit: 5 });
+  const out = await proxyEvChargerNearest({ query: q, serviceKey: "K", fetchImpl: mockFetch });
+  const j = JSON.parse(out.body);
+  assert.equal(j.truncated, false);
+  assert.equal(j.notice, undefined);
 });

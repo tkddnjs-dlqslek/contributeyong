@@ -54,6 +54,8 @@ metadata:
 - `lat`, `lng` (필수, nearest 라우트) — 위경도 (소수점)
 - `limit` (선택, nearest/search 라우트) — 가져올 대여소 개수, 기본 5, 최대 50
 - `query` (필수, search 라우트) — 대여소명/지명 키워드 (예: `망원역`, `강남`)
+- `available` (선택, nearest/search) — `true` 면 자전거가 1대 이상 있는 대여소만
+- `minBikes` (선택, nearest/search) — 최소 자전거 수 (예: `2`). "지금 빌릴 수 있는 데만" 의도면 `available=true` 또는 `minBikes=1`
 - `start`, `end` (선택, stations 라우트) — 페이지 범위, 최대 1000개 / 요청
 
 ## Workflow

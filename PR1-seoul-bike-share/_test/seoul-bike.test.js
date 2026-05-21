@@ -48,7 +48,7 @@ test("normalizeSeoulBikeStationsQuery rejects start < 1", () => {
 
 test("normalizeSeoulBikeNearestQuery accepts valid Seoul coords", () => {
   const out = normalizeSeoulBikeNearestQuery({ lat: "37.4979", lng: "127.0276" });
-  assert.deepEqual(out, { lat: 37.4979, lng: 127.0276, limit: 5 });
+  assert.deepEqual(out, { lat: 37.4979, lng: 127.0276, limit: 5, minBikes: 0 });
 });
 
 test("normalizeSeoulBikeNearestQuery applies default limit 5", () => {
@@ -308,11 +308,11 @@ test("proxySeoulBikeNearest: upstream non-2xx is surfaced", async () => {
 // ---------- normalize: search ----------
 
 test("normalizeSeoulBikeSearchQuery: accepts query + default limit", () => {
-  assert.deepEqual(normalizeSeoulBikeSearchQuery({ query: "망원역" }), { query: "망원역", limit: 5 });
+  assert.deepEqual(normalizeSeoulBikeSearchQuery({ query: "망원역" }), { query: "망원역", limit: 5, minBikes: 0 });
 });
 
 test("normalizeSeoulBikeSearchQuery: accepts q alias and custom limit", () => {
-  assert.deepEqual(normalizeSeoulBikeSearchQuery({ q: "강남", limit: 10 }), { query: "강남", limit: 10 });
+  assert.deepEqual(normalizeSeoulBikeSearchQuery({ q: "강남", limit: 10 }), { query: "강남", limit: 10, minBikes: 0 });
 });
 
 test("normalizeSeoulBikeSearchQuery: missing query rejected", () => {
@@ -372,4 +372,36 @@ test("proxySeoulBikeSearch: case-insensitive and respects limit", async () => {
   const out = await proxySeoulBikeSearch({ query: { query: "abc", limit: 2 }, serviceKey: "K", fetchImpl: mockFetch });
   const matched = JSON.parse(out.body).rentBikeStatus.row;
   assert.equal(matched.length, 2);
+});
+
+// ---------- #1 minBikes / available filter ----------
+
+test("normalizeSeoulBikeNearestQuery: minBikes default 0, available=true -> 1", () => {
+  assert.equal(normalizeSeoulBikeNearestQuery({ lat: 37.5, lng: 127 }).minBikes, 0);
+  assert.equal(normalizeSeoulBikeNearestQuery({ lat: 37.5, lng: 127, available: "true" }).minBikes, 1);
+  assert.equal(normalizeSeoulBikeNearestQuery({ lat: 37.5, lng: 127, minBikes: "3" }).minBikes, 3);
+});
+
+test("proxySeoulBikeNearest: minBikes filters out empty stations", async () => {
+  const rows = [
+    makeFakeStation(1, 37.5001, 127.0001, 0, 15), // 0 bikes
+    makeFakeStation(2, 37.5002, 127.0002, 5, 10)  // 5 bikes
+  ];
+  const mockFetch = async () => ({ status: 200, headers: { get: () => "application/json" }, text: async () => JSON.stringify({ rentBikeStatus: { row: rows } }) });
+  const out = await proxySeoulBikeNearest({ query: { lat: 37.5, lng: 127, limit: 10, minBikes: 1 }, serviceKey: "K", fetchImpl: mockFetch });
+  const result = JSON.parse(out.body).rentBikeStatus.row;
+  assert.equal(result.length, 1);
+  assert.equal(result[0].stationId, "ST-2");
+});
+
+test("proxySeoulBikeSearch: minBikes filter applies", async () => {
+  const rows = [
+    { ...makeFakeStation(1, 37.5, 127.0, 0, 15), stationName: "망원역 1번" },
+    { ...makeFakeStation(2, 37.5, 127.0, 4, 10), stationName: "망원역 2번" }
+  ];
+  const mockFetch = async () => ({ status: 200, headers: { get: () => "application/json" }, text: async () => JSON.stringify({ rentBikeStatus: { row: rows } }) });
+  const out = await proxySeoulBikeSearch({ query: { query: "망원역", limit: 10, minBikes: 1 }, serviceKey: "K", fetchImpl: mockFetch });
+  const result = JSON.parse(out.body).rentBikeStatus.row;
+  assert.equal(result.length, 1);
+  assert.equal(result[0].stationName, "망원역 2번");
 });
