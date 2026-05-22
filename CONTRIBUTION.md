@@ -26,10 +26,14 @@
 - 메인테이너 승인 후 반영 PR: https://github.com/NomaDamas/k-skill/pull/277
 - 전체 구현·테스트·설계·리서치 기록: 이 저장소(`contributeyong`)
 
-## 결과 (PR #277, 메인테이너 구현 반영본)
-- 좌표 기반 조회·잔여 자전거·빈 거치대·거리 계산 등 **핵심 기능 반영됨**
-- 봇/메인테이너가 독자 구현하며 라우트 명명은 일부 다름(`nearby`/`realtime`), `tbCycleStationInfo` 데이터셋 추가
-- 우리 제안 중 반납 필터(`returnable`/`minRacks`)는 미반영 → 보강 의견 검토 중
+## 결과 — **dev 머지 완료** (2026-05, PR #277)
+- 메인테이너(@vkehfdl1) 코멘트(이슈 #274): "277번 PR에서 dev로 머지되었으며, 수 일 내에 메인으로 배포됩니다. 감사합니다. @tkddnjs-dlqslek" → **기여자로 공식 멘션·인정됨**
+- dev 반영 최종 형태:
+  - 스킬 폴더: `seoul-bike/` (제안한 `seoul-bike-share`에서 봇이 명명 변경)
+  - 프록시 라우트 3종: `/v1/seoul-bike/realtime`, `/v1/seoul-bike/nearby`, `/v1/seoul-bike/stations`
+  - 좌표 기반 조회·잔여 자전거·빈 거치대·거리 계산 등 **핵심 기능 반영**
+- 우리 제안 대비 차이: 라우트 명명(`nearby`/`realtime`), `tbCycleStationInfo` 데이터셋 추가, 반납 필터(`returnable`/`minRacks`)는 미반영
+- 수 일 내 `dev → main` 정식 배포 예정
 
 ## 후속
 - `ev-charger-nearby`(전기차 충전소) 스킬도 동일 패턴으로 구현 완료 (`PR2-ev-charger-nearby/`), 별도 제출 예정
